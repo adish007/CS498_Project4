@@ -1,0 +1,4 @@
+ for path in glob.glob(os.path.join(DATA_DIR, "part-*.json")):
+        if os.path.getsize(path) == 0:
+            continue
+
