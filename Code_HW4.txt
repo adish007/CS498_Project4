@@ -1,4 +1,57 @@
- for path in glob.glob(os.path.join(DATA_DIR, "part-*.json")):
-        if os.path.getsize(path) == 0:
-            continue
+from flask import Flask, request, jsonify
+import os, glob, json
 
+app=Flask(__name__)
+DATA_DIR=os.path.join(os.path.dirname(__file__),"processed_data")
+
+term_to_url={}, {}, {}, {}
+
+term_to_url, url_to_term, term_totals, url_totals = {}, {}, {}, {}
+
+def load_data():
+    for p in glob.glob(os.path.join(DATA_DIR,"part-*.json")):
+        if os.path.getsize(p)==0: continue
+        with open(p) as f:
+            for r in json.load(f):
+                t=r["term"].strip()
+                u=r["url"].strip()
+                c=int(r["clicks"])
+                term_to_url.setdefault(t,{})
+                term_to_url[t][u]=term_to_url[t].get(u,0)+c
+                url_to_term.setdefault(u,{})
+                url_to_term[u][t]=url_to_term[u].get(t,0)+c
+                term_totals[t]=term_totals.get(t,0)+c
+                url_totals[u]=url_totals.get(u,0)+c
+
+def _body():
+    try:return request.get_json(force=True) or {}
+    except:return {}
+
+@app.route("/results",methods=["POST"])
+def results():
+    t=_body().get("term","").strip()
+    if t not in term_to_url: return jsonify({"results":{}})
+    o=sorted(term_to_url[t].items(),key=lambda x:x[1],reverse=True)
+    return jsonify({"results":dict(o)})
+
+@app.route("/trends",methods=["POST"])
+def trends():
+    t=_body().get("term","").strip()
+    return jsonify({"clicks":term_totals.get(t,0)})
+
+@app.route("/popularity",methods=["POST"])
+def popularity():
+    u=_body().get("url","").strip()
+    return jsonify({"clicks":url_totals.get(u,0)})
+
+@app.route("/getBestTerms",methods=["POST"])
+def get_best_terms():
+    u=_body().get("website","").strip()
+    if u not in url_to_term: return jsonify({"best_terms":[]})
+    tot=url_totals[u]
+    b=[term for term,cnt in url_to_term[u].items() if cnt>0.05*tot]
+    return jsonify({"best_terms":sorted(b)})
+
+if __name__=="__main__":
+    load_data()
+    app.run(host="0.0.0.0",port=5000,debug=True)
