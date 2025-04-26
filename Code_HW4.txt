@@ -55,3 +55,47 @@ def get_best_terms():
 if __name__=="__main__":
     load_data()
     app.run(host="0.0.0.0",port=5000,debug=True)
+
+
+
+
+
+from pyspark.sql import SparkSession
+import os
+import json
+
+spark = SparkSession.builder.appName("SearchPreprocess").getOrCreate()
+
+log_path = os.path.join(os.path.dirname(__file__), "search.log")
+lines_rdd = spark.read.text(log_path).rdd
+
+def parse_line(line_text):
+    try:
+        term_part, urls_part = line_text.split(":", 1)
+        term = term_part.strip()
+        url_click_pairs = urls_part.strip().split("~")
+        results = []
+        for entry in url_click_pairs:
+            if ':' not in entry:
+                continue
+            url, clicks = entry.strip().split(":")
+            results.append((term, url.strip(), int(clicks.strip())))
+        return results
+    except:
+        return []
+
+parsed_records = lines_rdd.flatMap(lambda row: parse_line(row[0]))
+record_list = parsed_records.collect()
+
+output_path = os.path.join(os.path.dirname(__file__), "processed_data")
+os.makedirs(output_path, exist_ok=True)
+
+for idx, (term, url, clicks) in enumerate(record_list):
+    record = {"term": term, "url": url, "clicks": clicks}
+    with open(os.path.join(output_path, f"part-{idx:05d}.json"), "w") as f:
+        json.dump(record, f)
+
+with open(os.path.join(output_path, "_SUCCESS"), "w") as f:
+    f.write("")
+
+spark.stop()
